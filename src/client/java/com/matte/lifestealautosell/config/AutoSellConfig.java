@@ -11,7 +11,7 @@ public final class AutoSellConfig {
 	public int itemCountThreshold = 0;
 
 	public String command = "sell";
-	public String confirmItemId = "minecraft:green_dye";
+	public String confirmItemId = "minecraft:lime_dye";
 
 	public List<String> itemIdsToSell = new ArrayList<>(List.of("minecraft:cobblestone"));
 
@@ -26,4 +26,3 @@ public final class AutoSellConfig {
 		ITEM_COUNT_AT_LEAST
 	}
 }
-

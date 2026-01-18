@@ -74,7 +74,7 @@ public final class AutoSellConfigScreen extends Screen {
 
 		y += 24;
 		this.confirmItemBox = new EditBox(this.font, left, y, contentWidth, 20, Component.literal("Confirm item"));
-		this.confirmItemBox.setValue(config.confirmItemId == null ? "minecraft:green_dye" : config.confirmItemId);
+		this.confirmItemBox.setValue(config.confirmItemId == null ? "minecraft:lime_dye" : config.confirmItemId);
 		this.addRenderableWidget(this.confirmItemBox);
 
 		y += 32;
@@ -180,4 +180,3 @@ public final class AutoSellConfigScreen extends Screen {
 		return raw.trim().toLowerCase(Locale.ROOT);
 	}
 }
-

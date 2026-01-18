@@ -40,6 +40,7 @@ The client-side jar will be located at `build/libs/lifesteal-auto-sell-0.1.0.jar
 - **Threshold**: interpreted either as “empty slots at most” or “count of selected items”, depending on the trigger mode.
 - **Command**: whichever command you want the mod to run (no leading `/` required).
 - **Confirm item**: the item that represents the “Confirm” button inside the sell GUI (default `minecraft:green_dye`).
+- **Confirm item**: the item that represents the “Confirm” button inside the sell GUI (default `minecraft:lime_dye`).
 - **Save/Cancel**: Save writes `.minecraft/config/lifesteal-auto-sell.json`; Cancel throws away the changes.
 
 ## Config file
@@ -53,7 +54,7 @@ Location: `<minecraft folder>/config/lifesteal-auto-sell.json`. Example structur
   "emptySlotsThreshold": 0,
   "itemCountThreshold": 0,
   "command": "sell",
-  "confirmItemId": "minecraft:green_dye",
+  "confirmItemId": "minecraft:lime_dye",
   "itemIdsToSell": ["minecraft:cobblestone"],
   "actionDelayTicks": 2,
   "cooldownTicks": 40,

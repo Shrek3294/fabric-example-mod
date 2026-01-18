@@ -27,6 +27,13 @@ final class AutoSeller {
 		COOLDOWN
 	}
 
+	private enum MovePhase {
+		NONE,
+		PICKUP_FROM_PLAYER,
+		PLACE_IN_GUI,
+		RETURN_TO_PLAYER
+	}
+
 	private State state = State.IDLE;
 	private int stateTicks = 0;
 	private int actionDelayTicks = 0;
@@ -34,8 +41,13 @@ final class AutoSeller {
 
 	private Set<Item> cachedItemsToSell = Set.of();
 	private int cachedItemsHash = 0;
-	private Item cachedConfirmItem = Items.GREEN_DYE;
-	private String cachedConfirmItemId = "minecraft:green_dye";
+	private Item cachedConfirmItem = Items.LIME_DYE;
+	private Item cachedConfirmItemAlt = Items.GREEN_DYE;
+	private String cachedConfirmItemId = "minecraft:lime_dye";
+
+	private MovePhase movePhase = MovePhase.NONE;
+	private int moveFromSlot = -1;
+	private int moveToSlot = -1;
 
 	public void tick(Minecraft minecraft, AutoSellConfig config) {
 		LocalPlayer player = minecraft.player;
@@ -90,7 +102,7 @@ final class AutoSeller {
 			return;
 		}
 
-		if (findConfirmSlot(player.containerMenu, player, cachedConfirmItem) == -1) {
+		if (findConfirmSlot(player.containerMenu, player, cachedConfirmItem, cachedConfirmItemAlt) == -1) {
 			return;
 		}
 
@@ -110,16 +122,53 @@ final class AutoSeller {
 		}
 
 		AbstractContainerMenu menu = player.containerMenu;
-		int slotToMove = findNextPlayerSlotToQuickMove(menu, player, cachedItemsToSell);
-		if (slotToMove == -1) {
-			stateTicks = 0;
-			state = State.CLICK_CONFIRM;
-			actionDelayTicks = Math.max(0, config.actionDelayTicks);
+		if (!menu.getCarried().isEmpty()) {
+			// Don't fight the player's cursor or a stuck carried stack.
 			return;
 		}
 
-		quickMoveSlot(minecraft, player, menu, slotToMove);
-		actionDelayTicks = Math.max(0, config.actionDelayTicks);
+		if (movePhase == MovePhase.NONE) {
+			int fromSlot = findNextPlayerSlot(menu, player, cachedItemsToSell);
+			if (fromSlot == -1) {
+				stateTicks = 0;
+				state = State.CLICK_CONFIRM;
+				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+				return;
+			}
+
+			ItemStack stackToMove = menu.getSlot(fromSlot).getItem();
+			int toSlot = findTargetSellSlot(menu, player, stackToMove);
+			if (toSlot == -1) {
+				stateTicks = 0;
+				state = State.CLICK_CONFIRM;
+				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+				return;
+			}
+
+			this.moveFromSlot = fromSlot;
+			this.moveToSlot = toSlot;
+			this.movePhase = MovePhase.PICKUP_FROM_PLAYER;
+		}
+
+		switch (movePhase) {
+			case PICKUP_FROM_PLAYER -> {
+				clickSlot(minecraft, player, menu, moveFromSlot);
+				movePhase = MovePhase.PLACE_IN_GUI;
+				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+			}
+			case PLACE_IN_GUI -> {
+				clickSlot(minecraft, player, menu, moveToSlot);
+				movePhase = menu.getCarried().isEmpty() ? MovePhase.NONE : MovePhase.RETURN_TO_PLAYER;
+				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+			}
+			case RETURN_TO_PLAYER -> {
+				clickSlot(minecraft, player, menu, moveFromSlot);
+				movePhase = MovePhase.NONE;
+				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+			}
+			case NONE -> {
+			}
+		}
 	}
 
 	private void tickClickConfirm(Minecraft minecraft, LocalPlayer player, AutoSellConfig config) {
@@ -133,7 +182,11 @@ final class AutoSeller {
 		}
 
 		AbstractContainerMenu menu = player.containerMenu;
-		int confirmSlot = findConfirmSlot(menu, player, cachedConfirmItem);
+		if (!menu.getCarried().isEmpty()) {
+			return;
+		}
+
+		int confirmSlot = findConfirmSlot(menu, player, cachedConfirmItem, cachedConfirmItemAlt);
 		if (confirmSlot == -1) {
 			if (stateTicks > 40) {
 				state = State.COOLDOWN;
@@ -172,6 +225,9 @@ final class AutoSeller {
 		stateTicks = 0;
 		actionDelayTicks = 0;
 		cooldownTicks = 0;
+		movePhase = MovePhase.NONE;
+		moveFromSlot = -1;
+		moveToSlot = -1;
 	}
 
 	private boolean shouldTrigger(LocalPlayer player, AutoSellConfig config) {
@@ -226,11 +282,12 @@ final class AutoSeller {
 		return player.containerMenu != null && player.containerMenu != player.inventoryMenu;
 	}
 
-	private static int findNextPlayerSlotToQuickMove(AbstractContainerMenu menu, LocalPlayer player, Set<Item> itemsToSell) {
+	private static int findNextPlayerSlot(AbstractContainerMenu menu, LocalPlayer player, Set<Item> itemsToSell) {
 		List<Slot> slots = menu.slots;
+		int playerStart = Math.max(0, slots.size() - 36);
 		for (int i = 0; i < slots.size(); i++) {
+			if (!isPlayerInventorySlot(slots, player, i, playerStart)) continue;
 			Slot slot = slots.get(i);
-			if (slot.container != player.getInventory()) continue;
 			ItemStack stack = slot.getItem();
 			if (stack.isEmpty()) continue;
 			if (!itemsToSell.contains(stack.getItem())) continue;
@@ -239,28 +296,43 @@ final class AutoSeller {
 		return -1;
 	}
 
-	private static int findConfirmSlot(AbstractContainerMenu menu, LocalPlayer player, Item confirmItem) {
+	private static int findTargetSellSlot(AbstractContainerMenu menu, LocalPlayer player, ItemStack stackToPlace) {
 		List<Slot> slots = menu.slots;
+		int playerStart = Math.max(0, slots.size() - 36);
 		for (int i = 0; i < slots.size(); i++) {
+			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
 			Slot slot = slots.get(i);
-			if (slot.container == player.getInventory()) continue;
+			if (!slot.getItem().isEmpty()) continue;
+			if (!slot.mayPlace(stackToPlace)) continue;
+			return i;
+		}
+		return -1;
+	}
+
+	private static int findConfirmSlot(AbstractContainerMenu menu, LocalPlayer player, Item confirmItem, Item confirmItemAlt) {
+		List<Slot> slots = menu.slots;
+		int playerStart = Math.max(0, slots.size() - 36);
+		for (int i = 0; i < slots.size(); i++) {
+			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
+			Slot slot = slots.get(i);
 			ItemStack stack = slot.getItem();
 			if (stack.isEmpty()) continue;
-			if (stack.getItem() == confirmItem) {
+			Item item = stack.getItem();
+			if (item == confirmItem || (confirmItemAlt != null && item == confirmItemAlt)) {
 				return i;
 			}
 		}
 		return -1;
 	}
 
-	private static void quickMoveSlot(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, int slotIndex) {
-		if (minecraft.gameMode == null) return;
-		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slotIndex, 0, ClickType.QUICK_MOVE, player);
-	}
-
 	private static void clickSlot(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, int slotIndex) {
 		if (minecraft.gameMode == null) return;
 		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slotIndex, 0, ClickType.PICKUP, player);
+	}
+
+	private static boolean isPlayerInventorySlot(List<Slot> slots, LocalPlayer player, int index, int playerStart) {
+		Slot slot = slots.get(index);
+		return slot.container == player.getInventory() || index >= playerStart;
 	}
 
 	private void rebuildCachesIfNeeded(AutoSellConfig config) {
@@ -274,6 +346,9 @@ final class AutoSeller {
 		if (!confirmItemId.equals(cachedConfirmItemId)) {
 			cachedConfirmItemId = confirmItemId;
 			cachedConfirmItem = resolveItem(confirmItemId, Items.GREEN_DYE);
+			cachedConfirmItemAlt = cachedConfirmItem == Items.GREEN_DYE
+				? Items.LIME_DYE
+				: (cachedConfirmItem == Items.LIME_DYE ? Items.GREEN_DYE : null);
 		}
 	}
 
