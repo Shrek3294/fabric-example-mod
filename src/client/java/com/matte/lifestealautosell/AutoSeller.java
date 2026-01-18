@@ -6,7 +6,7 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
@@ -370,7 +370,7 @@ final class AutoSeller {
 		String trimmed = id.trim();
 		if (trimmed.isEmpty()) return fallback;
 
-		Identifier location = Identifier.tryParse(trimmed);
+		ResourceLocation location = ResourceLocation.tryParse(trimmed);
 		if (location == null) return fallback;
 
 		return BuiltInRegistries.ITEM.getOptional(location).orElse(fallback);

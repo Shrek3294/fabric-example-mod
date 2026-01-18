@@ -8,22 +8,18 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 public final class LifestealAutoSellClient implements ClientModInitializer {
 	public static final AutoSellConfigManager CONFIG = new AutoSellConfigManager();
 	private static final AutoSeller AUTO_SELLER = new AutoSeller();
 
-	private static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
-		Identifier.fromNamespaceAndPath(LifestealAutoSell.MOD_ID, "main")
-	);
 	private static final KeyMapping OPEN_CONFIG_KEY = KeyBindingHelper.registerKeyBinding(
 		new KeyMapping(
 			"key.lifesteal_auto_sell.open_config",
 			InputConstants.Type.KEYSYM,
 			GLFW.GLFW_KEY_O,
-			CATEGORY
+			"category.lifesteal_auto_sell.main"
 		)
 	);
 
