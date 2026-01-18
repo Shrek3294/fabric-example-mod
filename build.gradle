@@ -16,13 +16,17 @@ repositories {
 	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
 	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
 	// for more information about repositories.
+	maven {
+		name = "TerraformersMC"
+		url = "https://maven.terraformersmc.com/releases/"
+	}
 }
 
 loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"modid" {
+		"lifesteal_auto_sell" {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
 		}
@@ -38,6 +42,9 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+	// Optional: allows a config screen via Mod Menu if Mod Menu is installed.
+	modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 	
 }
 

@@ -1,34 +1,26 @@
 {
 	"schemaVersion": 1,
-	"id": "modid",
+	"id": "lifesteal_auto_sell",
 	"version": "${version}",
-	"name": "Example mod",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "Lifesteal Auto Sell",
+	"description": "Auto-runs /sell when your inventory is full (or near full), moves selected items into the sell GUI, and clicks confirm.",
 	"authors": [
-		"Me!"
+		"matte"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"sources": "https://example.invalid/"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/modid/icon.png",
-	"environment": "*",
+	"environment": "client",
 	"entrypoints": {
-		"main": [
-			"com.example.ExampleMod"
-		],
 		"client": [
-			"com.example.ExampleModClient"
+			"com.matte.lifestealautosell.LifestealAutoSellClient"
+		],
+		"modmenu": [
+			"com.matte.lifestealautosell.compat.ModMenuCompat"
 		]
 	},
-	"mixins": [
-		"modid.mixins.json",
-		{
-			"config": "modid.client.mixins.json",
-			"environment": "client"
-		}
-	],
 	"depends": {
 		"fabricloader": ">=0.18.2",
 		"minecraft": "~1.21.11",
@@ -36,6 +28,6 @@
 		"fabric-api": "*"
 	},
 	"suggests": {
-		"another-mod": "*"
+		"modmenu": "*"
 	}
 }
