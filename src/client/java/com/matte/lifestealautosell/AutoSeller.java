@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Set;
 
 final class AutoSeller {
+	private static final int STUCK_TICKS_TO_CONFIRM = 10;
+
 	private enum State {
 		IDLE,
 		COMMAND_SENT,
@@ -48,6 +50,11 @@ final class AutoSeller {
 	private MovePhase movePhase = MovePhase.NONE;
 	private int moveFromSlot = -1;
 	private int moveToSlot = -1;
+
+	private int stuckTicks = 0;
+	private int lastInvSellables = -1;
+	private int lastGuiSellables = -1;
+	private int lastEmptySellSlots = -1;
 
 	public void tick(Minecraft minecraft, AutoSellConfig config) {
 		LocalPlayer player = minecraft.player;
@@ -108,6 +115,7 @@ final class AutoSeller {
 
 		stateTicks = 0;
 		state = State.MOVING_ITEMS;
+		resetMoveProgress();
 		actionDelayTicks = Math.max(0, config.actionDelayTicks);
 	}
 
@@ -127,42 +135,73 @@ final class AutoSeller {
 			return;
 		}
 
+		int invSellables = countSelectedItems(player, cachedItemsToSell);
+		int guiSellables = countSelectedItemsInSellGui(menu, player, cachedItemsToSell);
+		int emptySellSlots = countEmptySellSlots(menu, player);
+
+		updateMoveStuckTicks(invSellables, guiSellables, emptySellSlots);
+
+		boolean hasSellablesInSellGui = guiSellables > 0;
+		boolean sellGuiFull = emptySellSlots == 0;
+		boolean noSellablesLeftInInv = invSellables == 0;
+
+		if (hasSellablesInSellGui && (sellGuiFull || noSellablesLeftInInv || stuckTicks >= STUCK_TICKS_TO_CONFIRM)) {
+			stateTicks = 0;
+			state = State.CLICK_CONFIRM;
+			resetMoveProgress();
+			actionDelayTicks = Math.max(0, config.actionDelayTicks);
+			return;
+		}
+
+		if (!hasSellablesInSellGui && stuckTicks >= STUCK_TICKS_TO_CONFIRM) {
+			if (config.closeScreenAfterConfirm) {
+				player.closeContainer();
+			}
+			state = State.COOLDOWN;
+			resetMoveProgress();
+			cooldownTicks = Math.max(0, config.cooldownTicks);
+			actionDelayTicks = Math.max(0, config.actionDelayTicks);
+			return;
+		}
+
 		if (movePhase == MovePhase.NONE) {
 			int fromSlot = findNextPlayerSlot(menu, player, cachedItemsToSell);
 			if (fromSlot == -1) {
-				stateTicks = 0;
-				state = State.CLICK_CONFIRM;
-				actionDelayTicks = Math.max(0, config.actionDelayTicks);
-				return;
-			}
-
-			ItemStack stackToMove = menu.getSlot(fromSlot).getItem();
-			int toSlot = findTargetSellSlot(menu, player, stackToMove);
-			if (toSlot == -1) {
-				stateTicks = 0;
-				state = State.CLICK_CONFIRM;
-				actionDelayTicks = Math.max(0, config.actionDelayTicks);
+				if (hasSellablesInSellGui) {
+					stateTicks = 0;
+					state = State.CLICK_CONFIRM;
+					resetMoveProgress();
+					actionDelayTicks = Math.max(0, config.actionDelayTicks);
+				} else {
+					if (config.closeScreenAfterConfirm) {
+						player.closeContainer();
+					}
+					state = State.COOLDOWN;
+					resetMoveProgress();
+					cooldownTicks = Math.max(0, config.cooldownTicks);
+					actionDelayTicks = Math.max(0, config.actionDelayTicks);
+				}
 				return;
 			}
 
 			this.moveFromSlot = fromSlot;
-			this.moveToSlot = toSlot;
 			this.movePhase = MovePhase.PICKUP_FROM_PLAYER;
 		}
 
 		switch (movePhase) {
 			case PICKUP_FROM_PLAYER -> {
-				clickSlot(minecraft, player, menu, moveFromSlot);
-				movePhase = MovePhase.PLACE_IN_GUI;
+				// Use QUICK_MOVE (shift-click) to auto-move items to the GUI
+				clickSlot(minecraft, player, menu, moveFromSlot, ClickType.QUICK_MOVE);
+				movePhase = MovePhase.NONE;
 				actionDelayTicks = Math.max(0, config.actionDelayTicks);
 			}
 			case PLACE_IN_GUI -> {
-				clickSlot(minecraft, player, menu, moveToSlot);
-				movePhase = menu.getCarried().isEmpty() ? MovePhase.NONE : MovePhase.RETURN_TO_PLAYER;
+				// Not used with QUICK_MOVE
+				movePhase = MovePhase.NONE;
 				actionDelayTicks = Math.max(0, config.actionDelayTicks);
 			}
 			case RETURN_TO_PLAYER -> {
-				clickSlot(minecraft, player, menu, moveFromSlot);
+				// Not used with QUICK_MOVE
 				movePhase = MovePhase.NONE;
 				actionDelayTicks = Math.max(0, config.actionDelayTicks);
 			}
@@ -228,6 +267,32 @@ final class AutoSeller {
 		movePhase = MovePhase.NONE;
 		moveFromSlot = -1;
 		moveToSlot = -1;
+		resetMoveProgress();
+	}
+
+	private void resetMoveProgress() {
+		stuckTicks = 0;
+		lastInvSellables = -1;
+		lastGuiSellables = -1;
+		lastEmptySellSlots = -1;
+	}
+
+	private void updateMoveStuckTicks(int invSellables, int guiSellables, int emptySellSlots) {
+		if (lastInvSellables != -1) {
+			boolean changed = invSellables != lastInvSellables
+				|| guiSellables != lastGuiSellables
+				|| emptySellSlots != lastEmptySellSlots;
+
+			if (changed) {
+				stuckTicks = 0;
+			} else {
+				stuckTicks++;
+			}
+		}
+
+		lastInvSellables = invSellables;
+		lastGuiSellables = guiSellables;
+		lastEmptySellSlots = emptySellSlots;
 	}
 
 	private boolean shouldTrigger(LocalPlayer player, AutoSellConfig config) {
@@ -249,6 +314,35 @@ final class AutoSeller {
 		int empty = 0;
 		for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
 			if (stack.isEmpty()) empty++;
+		}
+		return empty;
+	}
+
+	private static int countSelectedItemsInSellGui(AbstractContainerMenu menu, LocalPlayer player, Set<Item> itemsToSell) {
+		List<Slot> slots = menu.slots;
+		int playerStart = Math.max(0, slots.size() - 36);
+
+		int count = 0;
+		for (int i = 0; i < slots.size(); i++) {
+			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
+			ItemStack stack = slots.get(i).getItem();
+			if (!stack.isEmpty() && itemsToSell.contains(stack.getItem())) {
+				count += stack.getCount();
+			}
+		}
+		return count;
+	}
+
+	private static int countEmptySellSlots(AbstractContainerMenu menu, LocalPlayer player) {
+		List<Slot> slots = menu.slots;
+		int playerStart = Math.max(0, slots.size() - 36);
+
+		int empty = 0;
+		for (int i = 0; i < slots.size(); i++) {
+			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
+			if (slots.get(i).getItem().isEmpty()) {
+				empty++;
+			}
 		}
 		return empty;
 	}
@@ -299,13 +393,22 @@ final class AutoSeller {
 	private static int findTargetSellSlot(AbstractContainerMenu menu, LocalPlayer player, ItemStack stackToPlace) {
 		List<Slot> slots = menu.slots;
 		int playerStart = Math.max(0, slots.size() - 36);
+		
+		// First pass: look for completely empty slots
 		for (int i = 0; i < slots.size(); i++) {
 			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
 			Slot slot = slots.get(i);
-			if (!slot.getItem().isEmpty()) continue;
-			if (!slot.mayPlace(stackToPlace)) continue;
+			if (slot.getItem().isEmpty()) {
+				return i;
+			}
+		}
+		
+		// Second pass: any non-player slot (fallback for containers that don't have empty slots)
+		for (int i = 0; i < slots.size(); i++) {
+			if (isPlayerInventorySlot(slots, player, i, playerStart)) continue;
 			return i;
 		}
+		
 		return -1;
 	}
 
@@ -326,8 +429,12 @@ final class AutoSeller {
 	}
 
 	private static void clickSlot(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, int slotIndex) {
+		clickSlot(minecraft, player, menu, slotIndex, ClickType.PICKUP);
+	}
+
+	private static void clickSlot(Minecraft minecraft, LocalPlayer player, AbstractContainerMenu menu, int slotIndex, ClickType clickType) {
 		if (minecraft.gameMode == null) return;
-		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slotIndex, 0, ClickType.PICKUP, player);
+		minecraft.gameMode.handleInventoryMouseClick(menu.containerId, slotIndex, 0, clickType, player);
 	}
 
 	private static boolean isPlayerInventorySlot(List<Slot> slots, LocalPlayer player, int index, int playerStart) {

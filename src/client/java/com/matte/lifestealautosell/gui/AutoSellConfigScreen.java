@@ -44,6 +44,7 @@ public final class AutoSellConfigScreen extends Screen {
 			Button.builder(getEnabledLabel(config.enabled), button -> {
 				config.enabled = !config.enabled;
 				button.setMessage(getEnabledLabel(config.enabled));
+				configManager.save();
 			}).bounds(left, y, contentWidth, 20).build()
 		);
 
